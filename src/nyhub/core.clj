@@ -9,11 +9,17 @@
 (def user-keys #{:name :avatar_url :bio :location :created_at
                  :login :email :type :hireable :blog :company})
 
+(defn github [f & args]
+  (let [result (apply f (concat args [options]))]
+    (if-let [msg (:message result)]
+      (throw (Exception. msg))
+      result)))
+
 (defn fetch-user [login]
   (println "fetch: " login)
-  (assoc (select-keys (users/user login options) user-keys)
-         :followers (set (map :login (users/followers login options)))
-         :following (set (map :login (users/following login options)))
+  (assoc (select-keys (github users/user login) user-keys)
+         :followers (set (map :login (github users/followers login)))
+         :following (set (map :login (github users/following login)))
          :as-of (Date.)))
 
 (def ttl 43200000) ; 12 hours
@@ -46,7 +52,9 @@
 
   (fresh-user "brandonbloom")
 
-  (walk "brandonbloom" 1)
+  (walk "brandonbloom" 3)
+
+  (count @users)
 
 )
 

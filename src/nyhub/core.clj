@@ -2,13 +2,14 @@
   (:require [tentacles.users :as users])
   (:import java.util.Date))
 
-(def options {})
+(def options {:per-page 100})
 
 (defonce users (atom {}))
 
 (def user-keys #{:name :avatar_url :bio :location :created_at
                  :login :email :type :hireable :blog :company})
 
+;;TODO: walk multiple pages
 (defn github [f & args]
   (let [result (apply f (concat args [options]))]
     (if-let [msg (:message result)]
@@ -16,13 +17,12 @@
       result)))
 
 (defn fetch-user [login]
-  (println "fetch: " login)
   (assoc (select-keys (github users/user login) user-keys)
          :followers (set (map :login (github users/followers login)))
          :following (set (map :login (github users/following login)))
          :as-of (Date.)))
 
-(def ttl 43200000) ; 12 hours
+(def ttl 86400000) ; 24 hours
 
 (defn fresh? [user]
   (let [now (.getTime (Date.))
@@ -40,7 +40,7 @@
 (defn walk [start-login max-depth]
   (loop [queue (conj clojure.lang.PersistentQueue/EMPTY [start-login 0])]
     (when-let [[login depth] (first queue)]
-      (println "walk: " login)
+      (println login (count queue))
       (let [user (fresh-user login)
             related (apply concat ((juxt :followers :following) user))]
         (if (= depth max-depth)
@@ -52,9 +52,27 @@
 
   (fresh-user "brandonbloom")
 
-  (walk "brandonbloom" 3)
+  (walk "brandonbloom" 2)
 
   (count @users)
 
-)
+  (spit "users.edn" @users)
 
+  (def users
+    (-> "/Users/brandon/Projects/nyhub/users.edn" slurp read-string atom))
+
+  ;; Find relevant New Yorkers
+  (->> @users vals
+       (filter (fn [{:keys [location]}]
+                 (when location
+                   (re-find #"(?i)(\bnyc?\b|new york)" location))))
+       (map (juxt #(count (:followers %)) :login :location))
+       sort
+       pprint)
+
+  ;; Eventually run this to clean up pagination errors
+  (apply swap! users dissoc #(->> % vals
+                                  (filter (fn [{:keys [followers]}]
+                                            (= 100 (count followers))))
+                                  (map :login)))
+)
